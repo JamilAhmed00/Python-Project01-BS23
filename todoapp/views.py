@@ -1,47 +1,44 @@
-from django.shortcuts import render
+
 from rest_framework import viewsets, permissions
 from django.contrib.auth.models import User
 from .models import Task
 from .serializers import UserSerializer, TaskSerializer
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework import status
 
-class IsAdminOrReadOnly(permissions.BasePermission):
-    def has_permission(self, request, view):
-        if request.user.is_staff:  
-            return True
-        if view.action in ['list', 'retrieve']:
-            return True
-        return False
 
-class IsOwnerOrAdmin(permissions.BasePermission):
+class IsAdminOrAssignedUser(permissions.BasePermission):
+
+    
+
     def has_object_permission(self, request, view, obj):
-        return request.user.is_staff or obj.assigned_to == request.user
+        
+        if request.user.is_staff:
+            return True
+
+        if view.action in ['retrieve', 'list']:
+            return obj.assigned_to == request.user
+
+        if view.action in ['update', 'partial_update']:
+            return obj.assigned_to == request.user
+
+        return False
 
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [permissions.AllowAny]  # Allow signup
-
-   
-
-
+    permission_classes = [permissions.AllowAny]
 
 
 class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwnerOrAdmin]
+    permission_classes = [IsAdminOrAssignedUser]
 
     def get_queryset(self):
-        if self.request.user.is_staff:  
-            return Task.objects.all()
-        return Task.objects.filter(assigned_to=self.request.user)
+        if getattr(self, 'swagger_fake_view', False):
+            return Task.objects.none()
 
-    def perform_create(self, serializer):
-        if self.request.user.is_staff:
-            serializer.save()
-        else:
-            raise permissions.PermissionDenied("Only admin can create tasks.")
+        user = self.request.user
+        if user.is_staff:
+            return Task.objects.all()
+        return Task.objects.filter(assigned_to=user)
